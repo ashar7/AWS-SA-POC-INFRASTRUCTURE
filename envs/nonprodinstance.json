@@ -1,0 +1,15 @@
+{
+  "stack_name": "AWS-SA-POC",
+  "cft_file":"cft/instancecft.json",
+  "parameters": {
+    "AppEnvironmentType": "nonprod",
+    "AMIImage": "ami-ff4baf9f",
+    "GitRevision": "e0c2d7b2aeb4729eadbcf034842c06327ada2405",
+    "GitHubLocation": "ASHAR7/AWS-SA-POC-APPLICATION"
+
+  },
+  "tags": {
+    "Owner": "anuj.aws1@gmail.com"
+  }
+
+}

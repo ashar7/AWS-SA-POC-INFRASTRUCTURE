@@ -1,0 +1,20 @@
+{
+	"name": "aws_cft_deployer",
+	"version": "1.0.0",
+	"license": "MIT",
+	"author": "anuj.sharma@nordstrom.com",
+	"main": "index.js",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/ashar7/AWS-SA-POC-INFRASTRUCTURE.git"
+	},
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"dependencies": {
+		"aws-sdk": "^2.1.43",
+		"inquirer": "^0.9.0",
+		"proxy-agent": "^2.0.0",
+		"node-json-minify": "^1.0.0"
+	}
+}

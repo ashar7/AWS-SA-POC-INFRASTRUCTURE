@@ -1,0 +1,294 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Stack build out for AWS-SA-POC",
+    "Parameters": {
+      "AppEnvironmentType": {
+        "Description": "The type of environement that the app will be set up as. This value will be included in the name of any EC2 instances for this stack. [AppName]-[AppEnvironmentType]-[StackSet]",
+        "Type": "String",
+        "AllowedValues": [ "nonprod", "prod" ],
+        "ConstraintDescription": "Must be either nonprod or prod.",
+        "Default": "nonprod"
+      },
+      "AMIImage": {
+        "Description": "The ID of the AMI that will be used as the base image for all server instances.",
+        "Type": "AWS::EC2::Image::Id",
+        "Default": "ami-ff4baf9f"
+      },
+      "GitRevision": {
+        "Description": "Commit SHA of GIT",
+        "Type": "String",
+        "Default": "1fb0c029285e0dcdf718d20b2df19ced7d8e5c44"
+      },
+      "GitHubLocation": {
+        "Description": "GIT HUB repo",
+        "Type": "String",
+        "Default": "ASHAR7/AWS-SA-POC-APPLICATION"
+      }
+
+    },
+    "Conditions": {
+      "IsNonProd": { "Fn::Equals": [{ "Ref": "AppEnvironmentType" }, "nonprod" ] },
+      "IsProd": { "Fn::Equals": [{ "Ref": "AppEnvironmentType" }, "prod" ] }
+    },
+    "Mappings": {
+      "static": {
+        "all": {
+          "AppName": "AWS-SA-POC",
+          "InstanceType": "t2.micro",
+          "Owner": "anuj.aws1@gmail.com"
+        }
+      },
+      "env": {
+        "nonprod": {
+          "Subnets":"subnet-00ab4464",
+          "AvailabilityZones": [ "us-west-2a"],
+          "VPC": "vpc-5e0c163b",
+          "KeyPairName": "aws-sa-poc"
+        },
+        "prod": {
+          "Subnets":"subnet-00ab4464",
+          "AvailabilityZones": [ "us-west-2a"],
+          "VPC": "vpc-b67a82d3",
+          "KeyPairName": "aws-sa-poc"
+        }
+      }
+    },
+    "Resources": {
+    "InstanceRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "AssumeRolePolicyDocument": {
+            "Statement": [ { "Sid": "", "Effect": "Allow", "Principal": { "Service": [
+              "ec2.amazonaws.com",
+              "codedeploy.amazonaws.com"
+              ]}, "Action": "sts:AssumeRole" } ] },
+            "Path": "/AWSSA/POC/",
+            "Policies": [{
+              "PolicyName": "InstanceRoleAccess",
+              "PolicyDocument": {
+                "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [ "s3:GetObject*","s3:List*"],
+                  "Resource": [ "arn:aws:s3:::*","arn:aws:s3:::*/*" ]
+                },
+                {
+                "Effect": "Allow",
+                "Action": [ "codedeploy:*","ec2:*"],
+                "Resource": [ "*" ]
+                }
+              ]
+            }
+          }
+        ]
+      }},
+    "InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/AWSSA/POC/",
+        "Roles": [ { "Ref": "InstanceRole" } ] }
+      },
+      "ControlPortAddress" : {
+        "Type" : "AWS::EC2::EIP",
+        "Properties" : {
+          "Domain" : "vpc"
+        }
+      },
+      "AssociateControlPort" : {
+        "Type" : "AWS::EC2::EIPAssociation",
+        "Properties" : {
+          "AllocationId" : { "Fn::GetAtt" : [ "ControlPortAddress", "AllocationId" ]},
+          "NetworkInterfaceId" : { "Ref" : "controlXface" }
+        }
+      },
+      "WebPortAddress" : {
+        "Type" : "AWS::EC2::EIP",
+        "Properties" : {
+          "Domain" : "vpc"
+        }
+      },
+      "AssociateWebPort" : {
+        "Type" : "AWS::EC2::EIPAssociation",
+        "Properties" : {
+          "AllocationId" : { "Fn::GetAtt" : [ "WebPortAddress", "AllocationId" ]},
+          "NetworkInterfaceId" : { "Ref" : "webXface" }
+        }
+      },
+      "RDPSecurityGroup" : {
+        "Type" : "AWS::EC2::SecurityGroup",
+        "Properties" : {
+          "VpcId": { "Fn::FindInMap": [ "env", { "Ref": "AppEnvironmentType" }, "VPC" ] },
+          "GroupDescription" : "Enable RDP access",
+          "SecurityGroupIngress" : [
+            { "IpProtocol" : "tcp", "FromPort" : "3389", "ToPort" : "3389", "CidrIp" : "67.161.88.32/32" },
+            { "IpProtocol" : "tcp", "FromPort" : "3389", "ToPort" : "3389", "CidrIp" : "172.31.0.0/16" }  
+          ]
+        }
+      },
+      "WebSecurityGroup" : {
+        "Type" : "AWS::EC2::SecurityGroup",
+        "Properties" : {
+          "VpcId": { "Fn::FindInMap": [ "env", { "Ref": "AppEnvironmentType" }, "VPC" ] },
+          "GroupDescription" : "Enable HTTP access via user defined port",
+          "SecurityGroupIngress" : [ { "IpProtocol" : "tcp", "FromPort" : 80, "ToPort" : 80, "CidrIp" : "0.0.0.0/0" } ]
+        }
+      },
+      "controlXface" : {
+        "Type" : "AWS::EC2::NetworkInterface",
+        "Properties" : {
+          "SubnetId" : { "Fn::FindInMap": [ "env", { "Ref": "AppEnvironmentType" }, "Subnets" ] },
+          "Description" :"Interface for control traffic such as SSH",
+          "GroupSet" : [ {"Ref" : "RDPSecurityGroup"} ],
+          "SourceDestCheck" : "true",
+          "Tags" : [ {"Key" : "Network", "Value" : "Control"}]
+        }
+      },
+     "webXface" : {
+        "Type" : "AWS::EC2::NetworkInterface",
+        "Properties" : {
+          "SubnetId" : { "Fn::FindInMap": [ "env", { "Ref": "AppEnvironmentType" }, "Subnets" ] },
+          "Description" :"Interface for web traffic",
+          "GroupSet" : [ {"Ref" : "WebSecurityGroup"} ],
+          "SourceDestCheck" : "true",
+          "Tags" : [ {"Key" : "Network", "Value" : "Web"}]
+        }
+      },
+    "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "BlockDeviceMappings": [
+          { "DeviceName": "/dev/sda1", "Ebs": { "VolumeSize": "30", "VolumeType": "gp2" } },
+          { "DeviceName": "/dev/sdd", "Ebs": { "VolumeSize": "1", "VolumeType": "gp2" } } ],
+        "IamInstanceProfile": { "Ref": "InstanceProfile" },
+        "ImageId": { "Ref": "AMIImage" },
+        "InstanceType": { "Fn::FindInMap": [ "static", "all", "InstanceType" ] },
+        "KeyName": { "Fn::FindInMap": [ "env", { "Ref": "AppEnvironmentType" }, "KeyPairName" ] },
+        "NetworkInterfaces" : [
+          { "NetworkInterfaceId" : {"Ref" : "controlXface"}, "DeviceIndex" : "0" },
+          { "NetworkInterfaceId" : {"Ref" : "webXface"}, "DeviceIndex" : "1" }
+        ],
+        "Tags": [
+          { "Key": "Name", "Value": { "Fn::Join": [ "-", [ { "Fn::FindInMap": [ "static", "all", "AppName" ] }, { "Ref": "AppEnvironmentType" } ] ] } },
+          { "Key": "Owner", "Value": { "Fn::FindInMap": [ "static", "all", "Owner" ] } }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "<script>\n",
+                "mkdir c:\\cfn\n",
+                "mkdir c:\\cfn\\log\n",
+                "c:\\\"Program Files\"\\Amazon\\cfn-bootstrap\\cfn-init.exe -s ",
+                {
+                  "Ref": "AWS::StackName"
+                },
+                " --region ",
+                {
+                  "Ref": "AWS::Region"
+                },
+                " -r EC2Instance > c:\\cfn\\log\\cfn-call-log 2>&1",
+                "</script>"
+              ]
+            ]
+          }
+        }
+      },
+      "Metadata": {
+          "AWS::CloudFormation::Init": {
+            "config": {
+              "commands": {
+                "00-download-host-agent": {
+                  "command": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "powershell.exe -Command \"Read-S3Object ",
+                        "-BucketName aws-codedeploy-us-west-2 ",
+                        "-Key latest/codedeploy-agent.msi ",
+                        "-File codedeploy-agent.msi\""
+                      ]
+                    ]
+                  },
+                  "cwd": "C:/cfn",
+                  "waitAfterCompletion": 0
+                },
+                "01-install-host-agent": {
+                  "command": "C:\\cfn\\codedeploy-agent.msi /quiet /l C:\\cfn\\host-agent-install-log.txt",
+                  "ignoreErrors": "true",
+                  "waitAfterCompletion": 0
+                },
+                "02-signal-ready": {
+                  "command": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "\"C:\\Program Files\\Amazon\\cfn-bootstrap\\cfn-signal\"",
+                        " -e 0 \"",
+                        {
+                          "Ref": "WaitHandle"
+                        },
+                        "\""
+                      ]
+                    ]
+                  },
+                  "waitAfterCompletion": 0
+                }
+              },
+              "services": {
+                "windows": {
+                  "codedeploy-agent": {
+                    "enabled": "true",
+                    "ensureRunning": "true",
+                    "commands": [
+                      "01-install-host-agent"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+    },
+    "WaitHandle": { "Type": "AWS::CloudFormation::WaitConditionHandle" },
+    "WaitCondition": {
+      "Type": "AWS::CloudFormation::WaitCondition",
+      "Properties": {
+        "Handle": { "Ref": "WaitHandle" },
+        "Timeout": "900"
+      }
+    },
+    "CodeDeployGroup": {
+      "Type": "AWS::CodeDeploy::DeploymentGroup",
+      "DependsOn" : "WaitCondition",
+      "Properties": {
+        "ApplicationName" : {"Ref":"CodeDeployApplication"},
+        "DeploymentConfigName":"CodeDeployDefault.AllAtOnce",
+        "ServiceRoleArn":{"Fn::GetAtt" : ["InstanceRole", "Arn"] },
+        "Ec2TagFilters" : [
+          {
+            "Key" : "Name",
+            "Value" : { "Fn::Join": [ "-", [ { "Fn::FindInMap": [ "static", "all", "AppName" ] }, { "Ref": "AppEnvironmentType" } ] ] },
+            "Type" : "KEY_AND_VALUE"
+          }
+        ],
+        "Deployment": {
+          "Description" : "NewCodeDeployRevision",
+          "Revision" : {
+            "RevisionType" : "GitHub",
+            "GitHubLocation" : {
+                "CommitId" : { "Ref": "GitRevision" },
+                "Repository" : { "Ref": "GitHubLocation" }
+              }
+          }
+        }
+      }
+    },
+    "CodeDeployApplication": {
+      "Type": "AWS::CodeDeploy::Application",
+      "Properties": {
+        "ApplicationName" : { "Fn::FindInMap": ["static", "all", "AppName"]}
+      }
+    }
+  }
+}
